@@ -5,6 +5,34 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Colour Estimation Study</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getDatabase, ref, set, get, onValue, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBYRvPvllPBRlTwBI1nvzicE2qJ6sZ9jVM",
+    authDomain: "color-study-1a66d.firebaseapp.com",
+    databaseURL: "https://color-study-1a66d-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "color-study-1a66d",
+    storageBucket: "color-study-1a66d.firebasestorage.app",
+    messagingSenderId: "405299103506",
+    appId: "1:405299103506:web:83d7f88efe92d0bedd55cb"
+  };
+
+  const fbApp = initializeApp(firebaseConfig);
+  const db = getDatabase(fbApp);
+
+  // Expose Firebase helpers to global scope
+  window._fbRef = (path) => ref(db, path);
+  window._fbSet = set;
+  window._fbGet = get;
+  window._fbOnValue = onValue;
+  window._fbTransaction = runTransaction;
+  window._fbReady = true;
+
+  // Signal that Firebase is ready
+  document.dispatchEvent(new Event("firebase-ready"));
+</script>
 <style>
   :root {
     --blue: #3B7DD8;
@@ -387,6 +415,33 @@
 <script>
 const TRUE_PCT = 31.9;
 const N_STEPS = 7;
+
+// ── FIREBASE STATE ──
+// All state lives in Firebase Realtime Database under /groups/g{1,2,3}/
+// Shape: { phase: 0, r1: {}, r2: {} }
+
+let currentGroup = 1;
+function groupPath() { return "groups/g" + currentGroup; }
+function counterPath() { return "counters/g" + currentGroup; }
+
+// Write full state to Firebase
+async function ss(s) {
+  await window._fbSet(window._fbRef(groupPath()), s);
+}
+
+// Read state once from Firebase
+async function gs() {
+  const snap = await window._fbGet(window._fbRef(groupPath()));
+  return snap.exists() ? snap.val() : { phase: 0, r1: {}, r2: {} };
+}
+
+// Subscribe to real-time state changes (for participant polling and controller)
+function onState(callback) {
+  return window._fbOnValue(window._fbRef(groupPath()), (snap) => {
+    const s = snap.exists() ? snap.val() : { phase: 0, r1: {}, r2: {} };
+    callback(s);
+  });
+}
 const PHASES = [
   { name:"Waiting to start",       desc:"Participants are joining. Press start when ready.",          btn:"▶ Start Session" },
   { name:"Image visible",          desc:"Participants see the image + question (10 s countdown).",    btn:"⏭ Skip to Estimate" },
@@ -398,21 +453,22 @@ const PHASES = [
 ];
 
 // ── STATE via localStorage ──
-let currentGroup = 1; // set when entering participant
-function gsKey() { return "exp_g" + currentGroup; }
-function counterKey() { return "exp_counter_g" + currentGroup; }
+// group key functions moved to Firebase section above
 function gs() { return JSON.parse(localStorage.getItem(gsKey()) || JSON.stringify({ phase:0, r1:{}, r2:{} })); }
 function ss(s) { localStorage.setItem(gsKey(), JSON.stringify(s)); }
 
 // ── ROLE ENTRY ──
-function enterParticipant(group) {
+async function enterParticipant(group) {
   currentGroup = group || 1;
   localStorage.setItem("myGroup", currentGroup);
-  // Assign ID using a shared atomic counter per group
-  let counter = parseInt(localStorage.getItem(counterKey()) || "0") + 1;
-  if (counter > 6) counter = 6; // cap at 6
-  localStorage.setItem(counterKey(), counter);
-  const id = counter;
+  // Atomic counter via Firebase transaction
+  const cRef = window._fbRef(counterPath());
+  let id = null;
+  await window._fbTransaction(cRef, (current) => {
+    const next = (current || 0) + 1;
+    id = next > 6 ? 6 : next;
+    return id;
+  });
   localStorage.setItem("myId", id);
   showScreen("participant");
   document.getElementById("p-id-label").textContent = "Participant #" + id;
@@ -429,7 +485,6 @@ function readyToWait() {
 
 function enterController() {
   showScreen("controller");
-  setInterval(renderController, 800);
   setCtrlGroup(1);
 }
 
@@ -439,17 +494,17 @@ function showScreen(id) {
 }
 
 // ── CONTROLLER ──
-function advancePhase() {
-  currentGroup = ctrlGroup; // ensure gs/ss use controller's selected group
-  const s = gs();
+async function advancePhase() {
+  currentGroup = ctrlGroup;
+  const s = await gs();
   if (s.phase < 6) s.phase++;
-  ss(s);
-  renderController();
+  await ss(s);
+  // renderController will be called by the onState listener
 }
 
-function renderController() {
-  currentGroup = ctrlGroup; // always read selected group
-  const s = gs();
+function renderController(s) {
+  currentGroup = ctrlGroup;
+  if (!s) return;
   const ph = s.phase;
   const pd = PHASES[Math.min(ph, PHASES.length-1)];
 
@@ -508,17 +563,17 @@ function renderController() {
   document.getElementById("ctrl-export-pre").textContent = rows.length > 1 ? rows.join("\n") : "No data yet.";
 }
 
-function exportCSV() {
+async function exportCSV() {
   const rows = ["group,participant_id,round,estimate,true_pct"];
-  [1,2,3].forEach(g => {
+  for (const g of [1,2,3]) {
     currentGroup = g;
-    const s = gs();
+    const s = await gs();
     for (let p = 1; p <= 6; p++) {
-      if (s.r1[p] !== undefined) rows.push(g+","+p+",1,"+s.r1[p]+","+TRUE_PCT);
-      if (s.r2[p] !== undefined) rows.push(g+","+p+",2,"+s.r2[p]+","+TRUE_PCT);
+      if (s.r1 && s.r1[p] !== undefined) rows.push(g+","+p+",1,"+s.r1[p]+","+TRUE_PCT);
+      if (s.r2 && s.r2[p] !== undefined) rows.push(g+","+p+",2,"+s.r2[p]+","+TRUE_PCT);
     }
-  });
-  currentGroup = ctrlGroup; // restore
+  }
+  currentGroup = ctrlGroup;
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([rows.join("\n")], {type:"text/csv"}));
   a.download = "colour_study_all_groups.csv";
@@ -526,23 +581,26 @@ function exportCSV() {
 }
 
 let ctrlGroup = 1;
+let ctrlUnsubscribe = null;
 function setCtrlGroup(g) {
   ctrlGroup = g;
-  currentGroup = g; // gs() uses currentGroup
+  currentGroup = g;
   [1,2,3].forEach(i => {
     const btn = document.getElementById("tab-g" + i);
     btn.style.background = i === g ? "rgba(59,125,216,0.3)" : "";
     btn.style.color = i === g ? "#7eb8f7" : "";
     btn.style.borderColor = i === g ? "rgba(59,125,216,0.5)" : "";
   });
-  renderController();
+  // Detach previous listener and attach new one for this group
+  if (ctrlUnsubscribe) ctrlUnsubscribe();
+  ctrlUnsubscribe = onState((s) => renderController(s));
 }
 
-function resetAll() {
+async function resetAll() {
   if (!confirm("Reset Group " + ctrlGroup + "? All data for this group will be lost.")) return;
-  localStorage.removeItem(gsKey());
-  localStorage.removeItem(counterKey());
-  renderController();
+  currentGroup = ctrlGroup;
+  await window._fbSet(window._fbRef(groupPath()), { phase: 0, r1: {}, r2: {} });
+  await window._fbSet(window._fbRef(counterPath()), 0);
 }
 
 // ── PARTICIPANT ──
@@ -554,14 +612,13 @@ let myId = null;
 function pollParticipant() {
   currentGroup = parseInt(localStorage.getItem("myGroup") || "1");
   myId = parseInt(localStorage.getItem("myId"));
-  setInterval(() => {
-    const s = gs();
+  // Real-time listener — fires immediately with current state, then on every change
+  onState((s) => {
     if (s.phase !== lastPhase) {
       lastPhase = s.phase;
       handlePhase(s);
     }
-  }, 600);
-  handlePhase(gs());
+  });
 }
 
 function hideAll() {
@@ -588,12 +645,18 @@ function handlePhase(s) {
 function show(id) { document.getElementById(id).style.display = "block"; }
 
 function closeParticipant() {
-  // Clear participant state, go back to home
   localStorage.removeItem("myId");
   localStorage.removeItem("myGroup");
   showScreen("home");
   lastPhase = -1;
 }
+
+// Wait for Firebase before enabling buttons
+document.addEventListener("firebase-ready", () => {
+  document.querySelectorAll(".home-btn").forEach(b => b.disabled = false);
+});
+// Disable buttons until Firebase loads
+document.querySelectorAll(".home-btn").forEach(b => b.disabled = true);
 
 function showImagePhase(round) {
   show("p-image");
@@ -608,11 +671,11 @@ function showImagePhase(round) {
     bar.style.width = "0%";
   }, 50);
   // After 10s, advance shared state to phase 2 (estimate)
-  imgTimer = setTimeout(() => {
-    const cur = gs();
+  imgTimer = setTimeout(async () => {
+    const cur = await gs();
     if (cur.phase === 1) {
       cur.phase = 2;
-      ss(cur);          // write to localStorage so controller sees it
+      await ss(cur);    // write to Firebase so controller sees it
       lastPhase = 2;
       hideAll();
       showEstimate(round);
@@ -628,15 +691,17 @@ function showEstimate(round) {
   document.getElementById("p-submit-btn").textContent = "Submit →";
 }
 
-function submitEstimate() {
+async function submitEstimate() {
   const val = parseInt(document.getElementById("p-input").value);
   if (isNaN(val) || val < 0 || val > 100) { alert("Please enter a number between 0 and 100."); return; }
-  const s = gs();
-  // Determine round: if r1 already has this participant's answer, it's r2; otherwise r1
-  const round = (s.r1[myId] !== undefined) ? "r2" : "r1";
-  s[round][myId] = val;
-  ss(s);
   document.getElementById("p-submit-btn").disabled = true;
+  document.getElementById("p-submit-btn").textContent = "Saving…";
+  const s = await gs();
+  // Determine round: if r1 already has this participant's answer, it's r2; otherwise r1
+  const round = (s.r1 && s.r1[myId] !== undefined) ? "r2" : "r1";
+  if (!s[round]) s[round] = {};
+  s[round][myId] = val;
+  await ss(s);
   document.getElementById("p-submit-btn").textContent = "✓ Submitted";
   setTimeout(() => { hideAll(); show("p-wait-fb"); }, 600);
 }
@@ -661,18 +726,17 @@ function showFeedback(s, round) {
     const total = 126; // circumference of r=20
     circFill.style.strokeDashoffset = 0;
     circLabel.textContent = secs;
-    fbCountdownTimer = setInterval(() => {
+    fbCountdownTimer = setInterval(async () => {
       secs--;
       circLabel.textContent = secs;
       circFill.style.strokeDashoffset = total * (1 - secs/15);
       if (secs <= 0) {
         clearInterval(fbCountdownTimer);
-        const cur = gs();
+        const cur = await gs();
         if (cur.phase === 3) {
           cur.phase = 4;
-          ss(cur);
-          lastPhase = 4;
-          handlePhase(cur);
+          await ss(cur);
+          // handlePhase will be triggered by the onState listener
         }
       }
     }, 1000);
