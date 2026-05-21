@@ -454,8 +454,7 @@ const PHASES = [
 
 // ── STATE via localStorage ──
 // group key functions moved to Firebase section above
-function gs() { return JSON.parse(localStorage.getItem(gsKey()) || JSON.stringify({ phase:0, r1:{}, r2:{} })); }
-function ss(s) { localStorage.setItem(gsKey(), JSON.stringify(s)); }
+// gs/ss defined above using Firebase
 
 // ── ROLE ENTRY ──
 async function enterParticipant(group) {
