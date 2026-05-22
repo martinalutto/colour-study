@@ -207,14 +207,16 @@
 
 <!-- HOME -->
 <div id="home" class="screen active">
-  <div class="home-logo">Colour<span>.</span>Study</div>
+  <div class="home-logo" onclick="logoTap()" style="cursor:default; user-select:none;">Colour<span>.</span>Study</div>
   <div class="home-sub">DCS · Social Influence in Estimation</div>
   <div id="group-select" style="width:100%; max-width:300px; margin:0 auto;">
     <div style="font-size:0.72rem; text-transform:uppercase; letter-spacing:0.12em; color:rgba(255,255,255,0.4); margin-bottom:12px; font-weight:500;">Select your group</div>
-    <button class="home-btn primary" onclick="enterParticipant(1)" style="margin-bottom:8px;">Group 1 — Participant</button>
-    <button class="home-btn primary" onclick="enterParticipant(2)" style="margin-bottom:8px; background:#2a6bc7;">Group 2 — Participant</button>
-    <button class="home-btn primary" onclick="enterParticipant(3)" style="margin-bottom:20px; background:#1d5299;">Group 3 — Participant</button>
-    <button class="home-btn secondary" onclick="enterController()">Researcher Panel</button>
+    <button class="home-btn primary" onclick="enterParticipant(1)" style="margin-bottom:8px;">Group 1</button>
+    <button class="home-btn primary" onclick="enterParticipant(2)" style="margin-bottom:8px; background:#2a6bc7;">Group 2</button>
+    <button class="home-btn primary" onclick="enterParticipant(3)" style="margin-bottom:20px; background:#1d5299;">Group 3</button>
+    <div id="researcher-btn-wrap" style="display:none;">
+      <button class="home-btn secondary" onclick="enterController()">Researcher Panel</button>
+    </div>
   </div>
 </div>
 
@@ -648,6 +650,24 @@ function closeParticipant() {
   localStorage.removeItem("myGroup");
   showScreen("home");
   lastPhase = -1;
+}
+
+// Show researcher panel only via URL param: ?researcher=true
+// or by tapping the title 7 times
+let logoTaps = 0;
+function logoTap() {
+  logoTaps++;
+  if (logoTaps >= 7) {
+    document.getElementById("researcher-btn-wrap").style.display = "block";
+    logoTaps = 0;
+  }
+}
+
+// Check URL param on load
+if (new URLSearchParams(window.location.search).get("researcher") === "true") {
+  document.addEventListener("firebase-ready", () => {
+    document.getElementById("researcher-btn-wrap").style.display = "block";
+  });
 }
 
 // Wait for Firebase before enabling buttons
