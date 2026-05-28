@@ -385,7 +385,7 @@ body { font-family: "DM Sans", sans-serif; background: var(--bg); color: var(--i
   </div>
   <div class="ctrl-card">
     <h3>Data</h3>
-    <button class="ctrl-btn ghost" onclick="exportCSV()" style="margin-bottom:0">↓ Download CSV</button>
+    <button id="export-btn" class="ctrl-btn ghost" onclick="exportCSV()" style="margin-bottom:0">↓ Download CSV</button>
     <div class="export-pre" id="ctrl-export-pre">No data yet.</div>
   </div>
   <button class="ctrl-btn danger" onclick="resetAll()">↺ Reset Group</button>
@@ -541,7 +541,7 @@ function showFeedbackR1(s) {
   const vals = Object.values(s.x1||{}).map(Number);
   const avg = vals.length>0?(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1):"—";
   document.getElementById("p-avg-r1").textContent = avg;
-  document.getElementById("p-your-r1").textContent = s.x1&&s.x1[myId]!==undefined?s.x1[myId]:"—";
+  document.getElementById("p-your-r1").textContent = s.x1&&s.x1[String(myId)]!==undefined?s.x1[String(myId)]:"—";
   document.getElementById("p-postconf-r1").value = 5;
   document.getElementById("p-postconf-val-r1").textContent = "5";
   document.getElementById("p-submit-pfc-r1").disabled = false;
@@ -585,7 +585,7 @@ function showFeedbackR2(s) {
   const vals = Object.values(s.x2||{}).map(Number);
   const avg = vals.length>0?(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1):"—";
   document.getElementById("p-avg-r2").textContent = avg;
-  document.getElementById("p-your-r2").textContent = s.x2&&s.x2[myId]!==undefined?s.x2[myId]:"—";
+  document.getElementById("p-your-r2").textContent = s.x2&&s.x2[String(myId)]!==undefined?s.x2[String(myId)]:"—";
   document.getElementById("p-postconf-r2").value = 5;
   document.getElementById("p-postconf-val-r2").textContent = "5";
   document.getElementById("p-submit-pfc-r2").disabled = false;
@@ -629,9 +629,10 @@ function showFinal(s) {
   const r3vals = Object.values(s.x3||{}).map(Number);
   const r3avg = r3vals.length>0?(r3vals.reduce((a,b)=>a+b,0)/r3vals.length).toFixed(1):"—";
   document.getElementById("final-r3-avg").textContent = r3avg;
-  document.getElementById("final-r1").textContent = s.x1&&s.x1[myId]!==undefined?s.x1[myId]:"—";
-  document.getElementById("final-r2").textContent = s.x2&&s.x2[myId]!==undefined?s.x2[myId]:"—";
-  document.getElementById("final-r3").textContent = s.x3&&s.x3[myId]!==undefined?s.x3[myId]:"—";
+  const mk=String(myId);
+  document.getElementById("final-r1").textContent = s.x1&&s.x1[mk]!==undefined?s.x1[mk]:"—";
+  document.getElementById("final-r2").textContent = s.x2&&s.x2[mk]!==undefined?s.x2[mk]:"—";
+  document.getElementById("final-r3").textContent = s.x3&&s.x3[mk]!==undefined?s.x3[mk]:"—";
 }
 
 function closeParticipant() {
@@ -697,7 +698,7 @@ function renderController(s) {
     document.getElementById("ctrl-resp-count").textContent=count+" responded"+extraInfo;
     const grid=document.getElementById("ctrl-resp-grid"); grid.innerHTML="";
     for(let i=1;i<=6;i++){
-      const v=ests[i];
+      const v=ests[String(i)]; // Firebase keys are strings
       const chip=document.createElement("div");
       chip.className="resp-chip"+(v!==undefined?" filled":"");
       chip.innerHTML="<div class='rp-id'>P"+i+"</div><div class='rp-val'>"+(v!==undefined?v+"%":"—")+"</div>";
@@ -721,12 +722,13 @@ function renderController(s) {
 function updateExportPreview(s) {
   const rows=["participant_id,x1,x2,x3,y0,y1,y2"];
   for(let p=1;p<=6;p++){
-    const x1=s.x1&&s.x1[p]!==undefined?s.x1[p]:"";
-    const x2=s.x2&&s.x2[p]!==undefined?s.x2[p]:"";
-    const x3=s.x3&&s.x3[p]!==undefined?s.x3[p]:"";
-    const y0=s.y0&&s.y0[p]!==undefined?s.y0[p]:"";
-    const y1=s.y1&&s.y1[p]!==undefined?s.y1[p]:"";
-    const y2=s.y2&&s.y2[p]!==undefined?s.y2[p]:"";
+    const k=String(p); // Firebase stores keys as strings
+    const x1=s.x1&&s.x1[k]!==undefined?s.x1[k]:"";
+    const x2=s.x2&&s.x2[k]!==undefined?s.x2[k]:"";
+    const x3=s.x3&&s.x3[k]!==undefined?s.x3[k]:"";
+    const y0=s.y0&&s.y0[k]!==undefined?s.y0[k]:"";
+    const y1=s.y1&&s.y1[k]!==undefined?s.y1[k]:"";
+    const y2=s.y2&&s.y2[k]!==undefined?s.y2[k]:"";
     if(x1!==""||x2!==""||x3!=="")
       rows.push(p+","+x1+","+x2+","+x3+","+y0+","+y1+","+y2);
   }
@@ -734,28 +736,45 @@ function updateExportPreview(s) {
 }
 
 async function exportCSV() {
-  const btn = document.querySelector('[onclick="exportCSV()"]');
+  const btn = document.getElementById("export-btn");
   if(btn) { btn.textContent="⏳ Loading..."; btn.disabled=true; }
-  const rows=["group,participant_id,x1,x2,x3,y0,y1,y2,true_pct"];
-  for(const g of [1,2,3]){
-    currentGroup=g;
-    const s=await gs(); // always reads fresh from Firebase
-    for(let p=1;p<=6;p++){
-      const x1=s.x1&&s.x1[p]!==undefined?s.x1[p]:"";
-      const x2=s.x2&&s.x2[p]!==undefined?s.x2[p]:"";
-      const x3=s.x3&&s.x3[p]!==undefined?s.x3[p]:"";
-      const y0=s.y0&&s.y0[p]!==undefined?s.y0[p]:"";
-      const y1=s.y1&&s.y1[p]!==undefined?s.y1[p]:"";
-      const y2=s.y2&&s.y2[p]!==undefined?s.y2[p]:"";
-      if(x1!==""||x2!==""||x3!=="")
-        rows.push(g+","+p+","+x1+","+x2+","+x3+","+y0+","+y1+","+y2+","+TRUE_PCT);
+  try {
+    const rows=["group,participant_id,x1,x2,x3,y0,y1,y2,true_pct"];
+    for(const g of [1,2,3]){
+      currentGroup=g;
+      const s=await gs();
+      for(let p=1;p<=6;p++){
+        const k=String(p);
+        const x1=s.x1&&s.x1[k]!==undefined?s.x1[k]:"";
+        const x2=s.x2&&s.x2[k]!==undefined?s.x2[k]:"";
+        const x3=s.x3&&s.x3[k]!==undefined?s.x3[k]:"";
+        const y0=s.y0&&s.y0[k]!==undefined?s.y0[k]:"";
+        const y1=s.y1&&s.y1[k]!==undefined?s.y1[k]:"";
+        const y2=s.y2&&s.y2[k]!==undefined?s.y2[k]:"";
+        if(x1!==""||x2!==""||x3!=="")
+          rows.push(g+","+p+","+x1+","+x2+","+x3+","+y0+","+y1+","+y2+","+TRUE_PCT);
+      }
     }
+    currentGroup=ctrlGroup;
+    const csv = rows.join("\n");
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "color_study_all_groups.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    // Update preview
+    document.getElementById("ctrl-export-pre").textContent = rows.length > 1 ? rows.join("\n") : "No data yet.";
+  } catch(e) {
+    console.error("Export error:", e);
+    alert("Export failed: " + e.message);
+  } finally {
+    currentGroup=ctrlGroup;
+    if(btn) { btn.textContent="↓ Download CSV"; btn.disabled=false; }
   }
-  currentGroup=ctrlGroup;
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(new Blob([rows.join("\n")],{type:"text/csv"}));
-  a.download="color_study_all_groups.csv"; a.click();
-  if(btn) { btn.textContent="↓ Download CSV"; btn.disabled=false; }
 }
 
 async function resetAll() {
