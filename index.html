@@ -682,14 +682,19 @@ function renderController(s) {
   }
 
   // Which round's estimates to show
-  const roundKey = ph<=2?"x1":ph<=4?"x2":"x3";
+  const roundKey = ph<=2?"x1":ph<=4?"x2":ph<=6?"x3":ph===7?"x3":"x3";
   const showResp = ph>=2;
   document.getElementById("ctrl-resp-card").style.display=showResp?"block":"none";
   if(showResp){
     const ests=s[roundKey]||{};
+    // At phase 5 (feedback R2), also track y2 submissions
     const count=Object.keys(ests).length;
     document.getElementById("ctrl-resp-label").textContent="("+count+"/6)";
-    document.getElementById("ctrl-resp-count").textContent=count+" responded";
+    // Also show post-confidence count when in feedback phases
+    let extraInfo = "";
+    if (ph===3) { const y1c=Object.keys(s.y1||{}).length; extraInfo=" · "+y1c+" confirmed confidence"; }
+    if (ph===5) { const y2c=Object.keys(s.y2||{}).length; extraInfo=" · "+y2c+" confirmed confidence"; }
+    document.getElementById("ctrl-resp-count").textContent=count+" responded"+extraInfo;
     const grid=document.getElementById("ctrl-resp-grid"); grid.innerHTML="";
     for(let i=1;i<=6;i++){
       const v=ests[i];
@@ -716,7 +721,7 @@ function renderController(s) {
 function updateExportPreview(s) {
   const rows=["participant_id,x1,x2,x3,y0,y1,y2"];
   for(let p=1;p<=6;p++){
-    const x1=s.x1?.(p) ?? (s.x1&&s.x1[p]!==undefined?s.x1[p]:"");
+    const x1=s.x1&&s.x1[p]!==undefined?s.x1[p]:"";
     const x2=s.x2&&s.x2[p]!==undefined?s.x2[p]:"";
     const x3=s.x3&&s.x3[p]!==undefined?s.x3[p]:"";
     const y0=s.y0&&s.y0[p]!==undefined?s.y0[p]:"";
@@ -729,10 +734,12 @@ function updateExportPreview(s) {
 }
 
 async function exportCSV() {
+  const btn = document.querySelector('[onclick="exportCSV()"]');
+  if(btn) { btn.textContent="⏳ Loading..."; btn.disabled=true; }
   const rows=["group,participant_id,x1,x2,x3,y0,y1,y2,true_pct"];
   for(const g of [1,2,3]){
     currentGroup=g;
-    const s=await gs();
+    const s=await gs(); // always reads fresh from Firebase
     for(let p=1;p<=6;p++){
       const x1=s.x1&&s.x1[p]!==undefined?s.x1[p]:"";
       const x2=s.x2&&s.x2[p]!==undefined?s.x2[p]:"";
@@ -748,6 +755,7 @@ async function exportCSV() {
   const a=document.createElement("a");
   a.href=URL.createObjectURL(new Blob([rows.join("\n")],{type:"text/csv"}));
   a.download="color_study_all_groups.csv"; a.click();
+  if(btn) { btn.textContent="↓ Download CSV"; btn.disabled=false; }
 }
 
 async function resetAll() {
